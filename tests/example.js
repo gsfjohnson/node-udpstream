@@ -1,8 +1,8 @@
 
-const Udp = require('../socket');
+const UdpStream = require('../socket');
 
-const clnt = Udp.createSocket('udp4');
-const svr = Udp.createSocket('udp4');
+const clnt = UdpStream.create();
+const svr = UdpStream.create();
 
 console.log('svr.bind()');
 svr.bind(4444,() =>

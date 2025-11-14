@@ -31,7 +31,7 @@ const defaultOptions = {
 /**
  * This class implements stream-based dgram socket.
  */
-class Socket extends NodeStream.Duplex
+class UdpStream extends NodeStream.Duplex
 {
   /**
    * @class
@@ -280,25 +280,19 @@ class Socket extends NodeStream.Duplex
 
   /**
    * Create a new UDP socket.
-   *
    * @param {dgram.Socket|string|Object} socket
    * @param {Object} [options]
-   * @returns {Socket}
+   * @returns {UdpStream}
    */
-  static createSocket(socket, options = {}) {
-    if (!Util.isDgramSocket(socket)) {
-      options = socket; // eslint-disable-line no-param-reassign
+  static create(options = {}) {
+    if (typeof options == 'string') options = { type: options };
+    if (Util.isDgramSocket(options)) options = { socket: options };
+    if (!Util.isObject(options)) options = {};
 
-      if (Util.isDgramSocket(options?.socket)) {
-        // eslint-disable-next-line no-param-reassign, prefer-destructuring
-        socket = options.socket;
-      } else {
-        socket = NodeDgram.createSocket(options || 'udp4'); // eslint-disable-line no-param-reassign
-        //socket.bind(options?.port || 0, options?.address || '0.0.0.0');
-      }
-    }
+    if (!Util.isDgramSocket(options.socket))
+      options.socket = NodeDgram.createSocket(options.type || 'udp4');
 
-    return new Socket(Object.assign({}, options, { socket }));
+    return new UdpStream(Object.assign({}, options));
   }
 
   static createPacket(...arr) { return new Packet(...arr) }
@@ -307,17 +301,17 @@ class Socket extends NodeStream.Duplex
 
 /**
  * Default filter for incoming messages.
- * @param {Socket} socket
+ * @param {UdpStream} stream
  * @param {Buffer} message
  * @param {{address: string, port: number}} rinfo
  * @returns {bool}
  */
-function filter(socket, message, rinfo) {
+function filter(stream, message, rinfo) {
   return true;
-  const isAllowedAddress = socket.remoteAddress === rinfo.address;
-  const isAllowedPort = socket.remotePort === rinfo.port;
+  const isAllowedAddress = stream.remoteAddress === rinfo.address;
+  const isAllowedPort = stream.remotePort === rinfo.port;
 
   return isAllowedAddress && isAllowedPort;
 }
 
-module.exports = Socket;
+module.exports = UdpStream;

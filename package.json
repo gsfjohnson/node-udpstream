@@ -1,6 +1,6 @@
 {
-  "name": "@gsfjohnson/udp-stream",
-  "version": "0.0.2",
+  "name": "@gsfjohnson/udpstream",
+  "version": "0.0.3",
   "description": "UDP Duplex Stream",
   "main": "index.js",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gsfjohnson/node-udp-stream.git"
+    "url": "git+https://github.com/gsfjohnson/node-udpstream.git"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com/gsfjohnson"

@@ -1,12 +1,11 @@
 
-const Socket = require('./socket');
-const Packet = require('./packet');
+const UdpStream = require('./socket');
+const UdpPacket = require('./packet');
 const Util = require('./util')
 
 module.exports = {
-  Socket,
-  Packet,
-  Util,
-  createSocket: Udp.createSocket,
-  createPacket: Udp.createPacket,
+  UdpStream,
+  UdpPacket,
+  createSocket: UdpStream.createSocket,
+  createPacket: UdpStream.createPacket,
 };
