@@ -3,23 +3,22 @@
 const Assert = require('assert');
 const NodeDgram = require('node:dgram');
 
-const Util = require('../util');
-const Socket = require('../socket');
+const { UdpStream, UdpStreamUtil } = require('..');
 
 const sinon = require('sinon');
 const Emitter = require('events');
 //const { describe } = require('node:test');
 
 
-describe('Socket', function()
+describe('UdpStream', function()
 {
-  describe('new Socket()', function()
+  describe('new UdpStream()', function()
   {
     it('should check port', () =>
     {
       Assert.throws(() => {
         // eslint-disable-next-line no-new
-        new Socket({
+        new UdpStream({
           remotePort: -1,
           remoteAddress: '127.0.0.1',
         });
@@ -29,7 +28,7 @@ describe('Socket', function()
     it('should check address', () => {
       Assert.throws(() => {
         // eslint-disable-next-line no-new
-        new Socket({
+        new UdpStream({
           remotePort: 100,
           remoteAddress: 'not.an.ip.addr',
         });
@@ -39,7 +38,7 @@ describe('Socket', function()
     it('should check socket', () => {
       Assert.throws(() => {
         // eslint-disable-next-line no-new
-        new Socket({
+        new UdpStream({
           remotePort: 100,
           remoteAddress: '127.0.0.1',
           socket: false,
@@ -50,7 +49,7 @@ describe('Socket', function()
     it('should check filter', () => {
       Assert.throws(() => {
         // eslint-disable-next-line no-new
-        new Socket({
+        new UdpStream({
           remotePort: 100,
           remoteAddress: '127.0.0.1',
           socket: NodeDgram.createSocket('udp4'),
@@ -65,11 +64,11 @@ describe('Socket', function()
     let isDgramSocket;
 
     before(function() {
-      isDgramSocket = Util.isDgramSocket;
-      Util.isDgramSocket = function() { return true };
+      isDgramSocket = UdpStreamUtil.isDgramSocket;
+      UdpStreamUtil.isDgramSocket = function() { return true };
     });
     after(function() {
-      Util.isDgramSocket = isDgramSocket;
+      UdpStreamUtil.isDgramSocket = isDgramSocket;
     });
 
     it('should read', () => {
@@ -78,7 +77,7 @@ describe('Socket', function()
         //close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mockDgramSock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -113,7 +112,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -141,7 +140,7 @@ describe('Socket', function()
       const remotePort = 1111;
       const remoteAddress = '127.0.0.1';
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort,
         remoteAddress,
@@ -167,7 +166,7 @@ describe('Socket', function()
       const remotePort = 1111;
       const remoteAddress = '127.0.0.1';
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort,
         remoteAddress,
@@ -190,7 +189,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -214,7 +213,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -238,7 +237,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -263,7 +262,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -288,7 +287,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -319,7 +318,7 @@ describe('Socket', function()
       const remotePort = 1111;
       const remoteAddress = '127.0.0.1';
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort,
         remoteAddress,
@@ -337,7 +336,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',
@@ -358,7 +357,7 @@ describe('Socket', function()
         close: sinon.spy(),
       });
 
-      const socket = new Socket({
+      const socket = new UdpStream({
         socket: mock,
         remotePort: 1111,
         remoteAddress: '127.0.0.1',

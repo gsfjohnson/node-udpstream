@@ -67,7 +67,7 @@ class UdpStream extends NodeStream.Duplex
     }
 
     this[_udpsock].on('message', (message, rinfo) => {
-      debug('*** message:',message,rinfo);
+      debug('message:',message,rinfo);
       if (checkMessage(this, message, rinfo)) {
         if (this[_objectmode]) message = new Packet(message,rinfo);
         this.process(message);
@@ -168,9 +168,9 @@ class UdpStream extends NodeStream.Duplex
     //if (cb) params.push(cb);
 
     // send it
-    debug('*** send:',...params);
+    debug('sending',...params);
     this[_udpsock].send(...params,() => {
-      debug('*** sent:',...params);
+      debug('sent',...params);
       if (cb) cb();
     });
   }
@@ -206,7 +206,7 @@ class UdpStream extends NodeStream.Duplex
    */
   process(data)
   {
-    debug('processing data:',data);
+    debug('process',data);
     if (this[_readable_closed]) return false;
     if (this[_objectmode] && !Packet.isPacket(data)) throw new TypeError('data must be Packet object');
     if (!this[_objectmode] && !Buffer.isBuffer(data)) throw new TypeError('data must be buffer object');
@@ -236,6 +236,13 @@ class UdpStream extends NodeStream.Duplex
     }
   }
 
+  /**
+   * Bind stream to a local address.
+   * @param {Number} [port]
+   * @param {String} [address]
+   * @param {Function} [callback]
+   * @returns {undefined}
+   */
   bind(...arr)
   {
     let port, address, cb;
@@ -248,12 +255,20 @@ class UdpStream extends NodeStream.Duplex
     if (port) { params.push(port); } //this.remotePort = port; }
     if (address) { params.push(address); } //this.remoteAddress = address; }
     this[_udpsock].bind(...params,() => {
-      debug('*** socket bound');
+      const { port, address } = this[_udpsock].address();
+      debug('bound',port,address);
       this[_bound] = true;
       if (cb) return cb();
     });
   }
 
+  /**
+   * Connect stream to a specific remote address.
+   * @param {Number} port
+   * @param {String} [address]
+   * @param {Function} [callback]
+   * @returns {undefined}
+   */
   connect(...arr)
   {
     let port, address, cb;
@@ -273,7 +288,7 @@ class UdpStream extends NodeStream.Duplex
 
     this[_udpsock].connect(...params,(err) => {
       if (err) throw err;
-      debug('*** socket connected');
+      debug('socket connected');
       if (cb) return cb();
     });
   }

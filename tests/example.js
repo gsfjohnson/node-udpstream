@@ -1,5 +1,5 @@
 
-const UdpStream = require('../socket');
+const UdpStream = require('../stream');
 
 const clnt = UdpStream.create();
 const svr = UdpStream.create();

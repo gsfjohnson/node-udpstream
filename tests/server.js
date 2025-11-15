@@ -1,14 +1,14 @@
 
-const UdpSocket = require('../socket');
+const UdpStream = require('../stream');
 
-const sock = UdpSocket.createSocket();
-console.log('sock:',sock);
+const stream = UdpStream.create();
+console.log('stream:',stream);
 
-console.log('sock.connect(4444, ()=>{} )');
-sock.connect(4444,function(){
-  console.log('sock connected');
-  console.log('sock:',sock);
-  console.log('sock.address():',sock.address());
-  console.log('sock.close()');
-  sock.close();
+console.log('stream.connect(4444, ()=>{} )');
+stream.bind(4444,function(){
+  console.log('stream connected');
+  console.log('stream:',stream);
+  console.log('stream.address():',stream.address());
+  console.log('stream.close()');
+  stream.close();
 });
