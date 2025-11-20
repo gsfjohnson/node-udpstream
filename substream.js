@@ -133,9 +133,10 @@ class UdpStreamSub extends NodeStream.Duplex
    */
   _write(chunk, encoding, cb)
   {
+    debug('_write()',chunk);
     if (this[_writable_closed]) { cb(new Error('Write after free.')); return; }
 
-    debug('sub writes to parent:',chunk,encoding,cb);
+    debug('parent.write:',chunk,encoding,cb);
     this[_parent].write(chunk,encoding,cb);
   }
 

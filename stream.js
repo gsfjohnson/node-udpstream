@@ -30,6 +30,8 @@ const pCloseTransport = Symbol('closeTransport');
 let debug; try { debug = require('debug')('udpstream'); }
 catch (e) { debug = function(){}; debug.inactive = true } // empty stub
 
+const isFunc = f => typeof f == 'function';
+
 const defaultOptions = {
   decodeStrings: true,
 };
@@ -167,6 +169,7 @@ class UdpStream extends NodeStream.Duplex
    */
   _write(chunk, encoding, cb)
   {
+    debug('_write()',chunk);
     if (this[_writable_closed]) { cb(new Error('Write after free.')); return; }
 
     let remotePort = this[_rp];
@@ -257,23 +260,20 @@ class UdpStream extends NodeStream.Duplex
       }
       debug('-- no substream found');
 
-      debug('-- exec substream creation test:',this[_listen]);
-      if (this[_listen](data,rinfo)) { // create connection
-        debug('-- creating substream:',peer);
-        const params = { parent: this, rinfo };
-        if (this[_objectmode]) params.objectMode = true;
-        if (this[_overloadBuffer]) params.overloadBuffer = true;
-        const connection = new UdpStreamSub(params)
-        debug('-- emit `connection`',connection);
-        this.emit('connection',connection);
-        connection.process(data,rinfo);
+      let result = isFunc(this[_listen]) ? this[_listen](data,rinfo) : false;
+
+      if (result) { // create connection
+        //debug('-- create substream:',peer);
+        const { port, address } = rinfo;
+        this.createConnection(port,address,data);
         return;
       }
     }
 
     debug('process() push',data);
-    this.push(data);
-    return true;
+    let out = this.push(data);
+    if (!out) debug('-- return',out);
+    return out;
   }
 
   /**
@@ -390,6 +390,27 @@ class UdpStream extends NodeStream.Duplex
     if (address) { params.push(address); } //this.remoteAddress = address; }
 
     this.bind(...params, onBound);
+  }
+
+  createConnection(port,address,message)
+  {
+    if (!this[_listen]) throw new Error('not listening -- unable to create connection');
+    if (!Util.isPort(port)) throw new Error('invalid port: '+port);
+    if (!NodeNet.isIP(address)) throw new Error('invalid address: '+address);
+
+    const rinfo = { port, address };
+    const params = { parent: this, rinfo };
+    if (this[_objectmode]) params.objectMode = true;
+    if (this[_overloadBuffer]) params.overloadBuffer = true;
+
+    const connection = new UdpStreamSub(params)
+
+    debug('-- emit `connection`',connection);
+    this.emit('connection',connection);
+
+    process.nextTick(() => connection.process(message,rinfo) );
+
+    return connection;
   }
 
   /**
