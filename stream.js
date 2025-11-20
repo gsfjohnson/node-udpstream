@@ -375,11 +375,11 @@ class UdpStream extends NodeStream.Duplex
     let { port, address, onListen, onMessage } = Util.parseListenParameters(...arr);
 
     if (onListen) this.once('listen',onListen);
-    if (onMessage) this[_listen] = onMessage;
-    else this[_listen] = function() { return true; } // create connection for every new unique address:port
 
     const onBound = function() {
       debug('listen() onBind()');
+      if (onMessage) this[_listen] = onMessage;
+      else this[_listen] = true;
       debug('-- this[_listen] =',this[_listen]);
       debug('-- emit `listen`');
       this.emit('listen');
