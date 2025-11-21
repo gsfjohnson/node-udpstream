@@ -13,6 +13,7 @@ const Packet = require('./packet');
 const Util = require('./util');
 
 const _udpsock = Symbol('_udpsock');
+const _connected = Symbol('_connected');
 const _closed = Symbol('_closed');
 const _objectmode = Symbol('_objectmode');
 const _ra = Symbol('_remoteAddress');
@@ -62,9 +63,9 @@ class UdpStream extends NodeStream.Duplex
     if (remoteAddress) this.remoteAddress = remoteAddress;
     if (remotePort) this.remotePort = remotePort;
 
-    if (!Util.isDgramSocket(socket)) throw new Error('Option `socket` should be a valid dgram socket.');
+    if (socket && !Util.isDgramSocket(socket)) throw new Error('invalid options.socket: '+socket);
 
-    this[_udpsock] = socket;
+    this[_udpsock] = socket ? socket : NodeDgram.createSocket(options.type || 'udp4');
     this[_closed] = false;
     this[_writable_closed] = false;
     this[_readable_closed] = false;
@@ -105,9 +106,27 @@ class UdpStream extends NodeStream.Duplex
     this.process(message,rinfo);
   }
 
-  [_listen](data,rinfo) {
-    debug('_listen(): return true');
-    return true; // create connections by default
+  //[_listen](data,rinfo) {
+  //  debug('_listen(): return true');
+  //  return true; // create connections by default
+  //}
+
+  /**
+   * @returns {Boolean}
+   */
+  get overloadBuffer() {
+    return this[_overloadBuffer] ? true : false;
+  }
+
+  /**
+   * @param {Boolean} value
+   */
+  set overloadBuffer(value) {
+    if (value === undefined || value === null) {} // okay
+    else if (typeof value == 'number') {} // okay
+    else if (typeof value == 'boolean') {} // okay
+    else throw new TypeError('`overloadBuffer` property must be boolean: '+value);
+    this[_overloadBuffer] = value ? true : false;
   }
 
   /**
@@ -172,6 +191,7 @@ class UdpStream extends NodeStream.Duplex
     debug('_write()',chunk);
     if (this[_writable_closed]) { cb(new Error('Write after free.')); return; }
 
+    const connected = this[_connected];
     let remotePort = this[_rp];
     let remoteAddress = this[_ra];
     let buffer = chunk;
@@ -193,16 +213,17 @@ class UdpStream extends NodeStream.Duplex
     //if (!NodeNet.isIP(remoteAddress)) { cb(new Error('most provide remoteAddress')); return; }
 
     const params = [buffer];
-    if (remotePort) params.push(remotePort);
-    if (remoteAddress) params.push(remoteAddress);
+    if (!connected && remotePort) params.push(remotePort);
+    if (!connected && remoteAddress) params.push(remoteAddress);
     //if (cb) params.push(cb);
 
     // send it
-    debug('sending',...params);
-    this[_udpsock].send(...params,() => {
+    const onSent = function() {
       debug('sent',...params);
       if (cb) cb();
-    });
+    };
+    debug('sending',...params,onSent);
+    this[_udpsock].send(...params,onSent);
   }
 
   /**
@@ -310,12 +331,13 @@ class UdpStream extends NodeStream.Duplex
   bind(...arr)
   {
     debug('bind()',...arr);
-    let { port, address, onBind } = Util.parseBindParameters(...arr);
+    let { port, address, callback } = parseBindParameters(...arr);
 
-    if (onBind) this.once('bind',onBind);
+    if (port === undefined) port = 0;
+    if (callback) this.once('bind',callback);
 
     const onBound = function() {
-      debug('bind() onBind()');
+      debug('bind() onBound()');
       const addr = this[_udpsock].address();
       this[_bound] = [addr.address,addr.port].join(':');
       debug('-- this[_bound] =',this[_bound]);
@@ -324,9 +346,10 @@ class UdpStream extends NodeStream.Duplex
     }.bind(this);
 
     const params = [];
-    if (port) { params.push(port); } //this.remotePort = port; }
-    if (address) { params.push(address); } //this.remoteAddress = address; }
+    if (typeof port == 'number') { params.push(port); } //this.remotePort = port; }
+    if (typeof address == 'string') { params.push(address); } //this.remoteAddress = address; }
 
+    debug(...params);
     this[_udpsock].bind(...params, onBound);
   }
 
@@ -339,23 +362,33 @@ class UdpStream extends NodeStream.Duplex
    */
   connect(...arr)
   {
-    debug('connect()',...arr);
-    let { port, address, onConnect } = parseConnectParameters(...arr);
+    let { port, address, callback } = parseConnectParameters(...arr);
+    debug('connect()',port,address,callback);
 
-    const params = [];
-    if (port) { params.push(port); this.remotePort = port; }
-    if (address) { params.push(address); this.remoteAddress = address; }
-    //if (cb) params.push(cb);
+    const udpsock = this[_udpsock];
+    if (!address) address = '127.0.0.1';
 
-    if (!this[_bound]) this.bind(onConnect);
-    else if (onConnect) onConnect();
+    const stage2 = function() {
+      udpsock.connect(...connectParams,(err) => {
+        if (err) throw err;
+        debug('-- socket connected',port,address);
+        this[_connected] = true;
+        debug('-- this[_connected] =',this[_connected]);
+        if (callback) callback();
+      });
+    }
+
+    const connectParams = [];
+    if (port) { connectParams.push(port); this.remotePort = port; }
+    if (address) { connectParams.push(address); this.remoteAddress = address; }
+
+    const bindParams = [];
+    if (address == '127.0.0.1') bindParams.push(address);
+
+    if (!this[_bound]) this.bind(...bindParams,stage2);
+    else stage2();
+
     return this;
-
-    this[_udpsock].connect(...params,(err) => {
-      if (err) throw err;
-      debug('socket connected');
-      if (cb) return cb();
-    });
   }
 
   /**
@@ -368,22 +401,21 @@ class UdpStream extends NodeStream.Duplex
    */
   listen(...arr)
   {
-    debug('listen()',...arr);
-    let { port, address, onListen, onMessage } = Util.parseListenParameters(...arr);
+    let { port, address, callback, arbiter } = parseListenParameters(...arr);
+    debug('listen()',port,address,callback,arbiter);
 
-    debug({ port, address, onListen, onMessage })
-    if (onListen) {
-      debug('on `listen`',onListen);
-      this.once('listen',onListen);
+    if (callback) {
+      //debug('on `listen`',callback);
+      this.once('listen',callback);
     }
 
-    const onBound = function() {
-      debug('listen() onBind()');
-      if (onMessage) this[_listen] = onMessage;
+    const onBound = function(addr) {
+      debug('listen() onBound()',addr);
+      if (arbiter) this[_listen] = arbiter;
       else this[_listen] = true;
       debug('-- this[_listen] =',this[_listen]);
-      debug('-- emit `listen`');
-      this.emit('listen');
+      debug('-- emit `listen`',addr);
+      this.emit('listen',addr);
     }.bind(this);
 
     const params = [];
@@ -416,7 +448,6 @@ class UdpStream extends NodeStream.Duplex
 
   /**
    * Create new UdpStream.
-   * @param {dgram.Socket|string|Object} socket
    * @param {Object} [options]
    * @returns {UdpStream}
    */
@@ -424,9 +455,6 @@ class UdpStream extends NodeStream.Duplex
     if (typeof options == 'string') options = { type: options };
     if (Util.isDgramSocket(options)) options = { socket: options };
     if (!Util.isObject(options)) options = {};
-
-    if (!Util.isDgramSocket(options.socket))
-      options.socket = NodeDgram.createSocket(options.type || 'udp4');
 
     return new UdpStream(Object.assign({}, options));
   }
@@ -436,17 +464,17 @@ class UdpStream extends NodeStream.Duplex
    * @param {Object} [options]
    * @returns {UdpStream}
    */
-  static connect(options = {})
+  static connect(...arr)
   {
-    if (typeof options == 'number') options = { remotePort: options };
-    if (typeof options == 'string') {
-      if (['udp4','udp6'].includes(options)) options = { type: options };
-      else if (NodeNet.isIP(options)) options = { remoteAddress: options };
-    }
+    const { port, address, callback, options } = parseStaticConnectParameters(...arr);
 
     const udpstream = UdpStream.create(options);
 
-    return udpstream.connect(options);
+    const params = [port];
+    if (address) params.push(address);
+    if (callback) params.push(callback);
+
+    return udpstream.connect(...params);
   }
 
   /**
@@ -485,15 +513,58 @@ function filter(stream, message, rinfo) {
   return isAllowedAddress && isAllowedPort;
 }
 
-function parseConnectParameters(...arr)
+function parseListenParameters(...arr)
 {
-  let port, address, onConnect;
+  let port, address, callback, arbiter;
   arr.forEach( (el) => {
     if (Util.isPort(el)) port = el;
     else if (NodeNet.isIP(el)) address = el;
-    else if (typeof el == 'function') onConnect = el;
+    else if (!callback && typeof el == 'function') callback = el;
+    else if (!arbiter && typeof el == 'function') arbiter = el;
   });
-  return { port, address, onConnect };
+  return { port, address, callback, arbiter };
+}
+
+function parseConnectParameters(...arr)
+{
+  let port, address, callback;
+  arr.forEach( (el) => {
+    if (Util.isPort(el)) port = el;
+    else if (NodeNet.isIP(el)) address = el;
+    else if (typeof el == 'function') callback = el;
+  });
+  if (!port) throw new TypeError('Must specify port > 0 and < 65536.  Received: '+port);
+  return { port, address, callback };
+}
+
+function parseBindParameters(...arr)
+{
+  let port, address, callback;
+  arr.forEach( (el) => {
+    if (Util.isPort(el)) port = el;
+    else if (NodeNet.isIP(el)) address = el;
+    else if (!callback && typeof el == 'function') callback = el;
+  });
+  return { port, address, callback };
+}
+
+function parseStaticConnectParameters(...arr)
+{
+  let port, address, callback, options = {};
+  arr.forEach( (el) => {
+    if (Util.isPort(el)) options.port = el;
+    else if (NodeNet.isIP(el)) options.address = el;
+    else if (['udp4','udp6'].includes(el)) options.type = el;
+    else if (typeof el == 'function') options.onConnect = el;
+    else if (typeof el == 'object' && el !== null && !Array.isArray(el))
+      Object.assign(options,el);
+    else throw new TypeError('invalid parameter: '+ el);
+  });
+  if (options.port) { port = options.port; delete options.port; }
+  if (options.address) { address = options.address; delete options.address; }
+  if (options.onConnect) { callback = options.onConnect; delete options.onConnect; }
+  debug({ port, address, callback, options });
+  return { port, address, callback, options };
 }
 
 module.exports = UdpStream;

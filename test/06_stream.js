@@ -28,8 +28,46 @@ describe('UdpStream', function()
 
   describe('constructor', function()
   {
-    it('should create an instance with valid options', function()
+    it('should create an instance', function()
     {
+      stream1 = new UdpStream();
+      success.constructed = true;
+    });
+
+    it('should create an instance with options.socket', function()
+    {
+      if (!success.constructed) this.skip();
+
+      stream1 = new UdpStream({ socket: socket1 });
+
+      success.constructed_socket = true;
+    });
+
+    it('should create an instance with options.objectMode', function()
+    {
+      if (!success.constructed) this.skip();
+
+      stream1 = new UdpStream({ objectMode: true });
+      Assert.strictEqual(stream1.writableObjectMode, true);
+      Assert.strictEqual(stream1.readableObjectMode, true);
+
+      success.constructed_objectmode = true;
+    });
+
+    it('should create an instance with options.overloadBuffer', function()
+    {
+      if (!success.constructed) this.skip();
+
+      stream1 = new UdpStream({ overloadBuffer: true });
+      Assert.strictEqual(stream1.overloadBuffer, true);
+
+      success.constructed_overloadbuffer = true;
+    });
+
+    it('should create an instance with options.overloadBuffer', function()
+    {
+      if (!success.constructed) this.skip();
+
       const options = {
         socket: socket1,
         remoteAddress: '127.0.0.1',
@@ -45,7 +83,7 @@ describe('UdpStream', function()
     });
 
     it('should throw on invalid socket', function() {
-      Assert.throws(() => new UdpStream({ socket: {} }), /Option `socket` should be a valid dgram socket/);
+      Assert.throws(() => new UdpStream({ socket: {} }), /invalid options.socket/);
     });
 
     /*
@@ -110,8 +148,10 @@ describe('UdpStream', function()
       stream1 = new UdpStream({ socket: socket1 });
       stream2 = new UdpStream({ socket: socket2 });
 
+      let filtered;
       const filter = function(data,rinfo) {
-        return true;
+        filtered = true;
+        return true; // create connection
       }
       const onListen = function()
       {
@@ -119,9 +159,11 @@ describe('UdpStream', function()
         stream1.on('connection', function(conn)
         {
           try {
+            Assert.equal(filtered,true);
             Assert(conn instanceof UdpStreamSub);
             success.connection = true; done();
           } catch(e) { done(e) }
+          //finally { stream1.destroy() }
         });
 
         stream2.connect(port, '127.0.0.1', function() {
@@ -170,12 +212,10 @@ describe('UdpStream', function()
       stream1 = new UdpStream({ socket: socket1 });
       stream1.bind(0, function() {
         stream1.destroy();
-        //process.nextTick( () => {
-        //  try {
-            Assert.strictEqual(stream1.closed,true);
-            done();
-        //  } catch (e) { done(e) }
-        //});
+        try {
+          Assert.strictEqual(stream1.closed,true);
+          done();
+        } catch (e) { done(e) }
       });
     });
   });
@@ -193,19 +233,23 @@ describe('UdpStream', function()
     it('UdpStream.connect() should create and connect', function(done)
     {
       if (!success.connect) this.skip();
+
       const port = 12345, address = '127.0.0.1';
+
+      // XXX: Mock bind to avoid actual network
       const stream = UdpStream.connect(port, address);
+
       Assert(stream instanceof UdpStream);
-      // Mock bind to avoid actual network
+
       stream.once('bind', (addr) => {
         let err;
         try {
           //Assert.equal(addr.port, port);
           Assert.equal(addr.address, address);
-          stream.destroy(); // unref udp socket
+          done();
         }
-        catch (e) { err = e; done(err) }
-        if (!err) done();
+        catch (e) { done(e) }
+        finally { stream.destroy(); } // unref udp socket
       });
     });
 
