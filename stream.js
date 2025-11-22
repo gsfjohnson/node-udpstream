@@ -67,7 +67,7 @@ class UdpStream extends NodeStream.Duplex
     if (remotePort) this.remotePort = remotePort;
 
     //if (socket && !Util.isDgramSocket(socket)) throw new Error('invalid options.socket: '+socket);
-    if (!Util.isObject(socket)) throw new Error('Invalid `socket` option, must be Datagram object: '+socket);
+    if (socket && !Util.isObject(socket)) throw new Error('Invalid `socket` option, must be Datagram object: '+socket);
 
     this[_udpsock] = socket ? socket : NodeDgram.createSocket(options.type || 'udp4');
     this[_closed] = false;
