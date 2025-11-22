@@ -1,5 +1,5 @@
 
-const UdpStream = require('./stream');
+const { UdpStream } = require('./stream');
 const UdpStreamPacket = require('./packet');
 const UdpStreamUtil = require('./util')
 

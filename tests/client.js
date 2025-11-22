@@ -1,5 +1,5 @@
 
-const UdpStream = require('../stream');
+const { UdpStream } = require('..');
 
 const client = UdpStream.create();
 console.log('client:',client);

@@ -8,7 +8,6 @@ const NodeStream = require('node:stream');
 const NodeNet = require('node:net');
 const NodeUtil = require('node:util');
 
-const UdpStreamSub = require('./substream');
 const Packet = require('./packet');
 const Util = require('./util');
 
@@ -18,6 +17,7 @@ const _closed = Symbol('_closed');
 const _objectmode = Symbol('_objectmode');
 const _ra = Symbol('_remoteAddress');
 const _rp = Symbol('_remotePort');
+const _parent = Symbol('_parent');
 const _listen = Symbol('_listen');
 const _writable_closed = Symbol('_writableClosed');
 const _readable_closed = Symbol('_readableClosed');
@@ -32,6 +32,7 @@ let debug; try { debug = require('debug')('udpstream'); }
 catch (e) { debug = function(){}; debug.inactive = true } // empty stub
 
 const isFunc = f => typeof f == 'function';
+const throwTypeError = text => { throw new TypeError(text) };
 
 const defaultOptions = {
   decodeStrings: true,
@@ -57,13 +58,16 @@ class UdpStream extends NodeStream.Duplex
     debug('constructor()',options);
     super(Object.assign({}, options, defaultOptions));
 
+    if (options.parent) return;
+
     const { objectMode, remoteAddress, remotePort, socket, messagesFilter, closeTransport, overloadBuffer } = options;
 
     if (Util.isrinfo(options.rinfo)) { remoteAddress = options.rinfo.address; remotePort = options.rinfo.port }
     if (remoteAddress) this.remoteAddress = remoteAddress;
     if (remotePort) this.remotePort = remotePort;
 
-    if (socket && !Util.isDgramSocket(socket)) throw new Error('invalid options.socket: '+socket);
+    //if (socket && !Util.isDgramSocket(socket)) throw new Error('invalid options.socket: '+socket);
+    if (!Util.isObject(socket)) throw new Error('Invalid `socket` option, must be Datagram object: '+socket);
 
     this[_udpsock] = socket ? socket : NodeDgram.createSocket(options.type || 'udp4');
     this[_closed] = false;
@@ -432,11 +436,11 @@ class UdpStream extends NodeStream.Duplex
     if (!NodeNet.isIP(address)) throw new Error('invalid address: '+address);
 
     const rinfo = { port, address };
-    const params = { parent: this, rinfo };
-    if (this[_objectmode]) params.objectMode = true;
-    if (this[_overloadBuffer]) params.overloadBuffer = true;
+    const slaveParams = { parent: this, rinfo };
+    if (this[_objectmode]) slaveParams.objectMode = true;
+    if (this[_overloadBuffer]) slaveParams.overloadBuffer = true;
 
-    const connection = new UdpStreamSub(params)
+    const connection = new UdpStreamSlave(slaveParams)
 
     debug('-- emit `connection`',connection);
     this.emit('connection',connection);
@@ -497,6 +501,215 @@ class UdpStream extends NodeStream.Duplex
   }
 }
 
+// debug if appropriate
+let rebug; try { rebug = require('debug')('udpstream:sub'); }
+catch (e) { rebug = function(){} } // empty stub
+
+/**
+ * This class implements sub (slave) stream of the UdpStream.
+ */
+class UdpStreamSlave extends UdpStream
+{
+  /**
+   * @class
+   * @param {Object} options
+   * @param {string} options.remoteAddress
+   * @param {number} options.remotePort
+   * @param {boolean} [options.objectMode]
+   * @param {boolean} [options.closeTransport]
+   */
+  constructor(options = {})
+  {
+    rebug('constructor()',options);
+
+    const { parent, objectMode, closeTransport, overloadBuffer } = options;
+
+    if (!parent) throw new TypeError('missing `parent` option: '+parent);
+    if (!Util.isObject(parent)) throw new TypeError('invalid `parent` option: '+parent);
+    if (parent?.constructor?.name != 'UdpStream') throw new TypeError('`parent` option must be UdpStream object: '+parent.constructor.name);
+
+    super({ ...options, slave: true });
+
+    let { remoteAddress, remotePort } = options;
+    if (Util.isrinfo(options.rinfo)) { remoteAddress = options.rinfo.address; remotePort = options.rinfo.port }
+    this.remoteAddress = remoteAddress || throwTypeError('missing remoteAddress');
+    this.remotePort = remotePort || throwTypeError('missing remotePort');
+
+    this[_parent] = parent;
+    this[_closed] = false;
+    this[_writable_closed] = false;
+    this[_readable_closed] = false;
+
+    if (objectMode) this[_objectmode] = objectMode;
+    if (overloadBuffer) this[_overloadBuffer] = true;
+
+    const peer = [remoteAddress,remotePort].join(':');
+    rebug('peer:',peer);
+
+    this[_parent].on(peer, this.process.bind(this) );
+    this[_parent].once('close', this.close.bind(this) );
+    this.once('finish', () => { this[_writable_closed] = true; });
+
+    this[pCloseTransport] = Util.isBoolean(closeTransport) ? closeTransport : true;
+  }
+
+  /**
+   * @returns {string}
+   */
+  get remoteAddress() {
+    return this[_ra];
+  }
+
+  /**
+   * @param {string} address
+   */
+  set remoteAddress(address) {
+    if (!NodeNet.isIP(address)) throw new Error('Option `remoteAddress` should be a valid ip address.');
+    rebug('set remoteAddress:',address);
+    this[_ra] = address;
+  }
+
+  /**
+   * @returns {number}
+   */
+  get remotePort() {
+    return this[_rp];
+  }
+
+  /**
+   * @param {number} port
+   */
+  set remotePort(port) {
+    if (!Util.isPort(port)) throw new Error('Option `remotePort` should be a valid port.');
+    rebug('set remotePort:',port);
+    this[_rp] = port;
+  }
+
+  /**
+   * @returns {string}
+   */
+  get localAddress() {
+    return this[_parent].localAddress;
+  }
+
+  /**
+   * @returns {number}
+   */
+  get localPort() {
+    return this[_parent].localPort;
+  }
+
+  /**
+   * @private
+   */
+  _read() {} // eslint-disable-line class-methods-use-this
+
+  /**
+   * @private
+   * @param {Buffer} chunk
+   * @param {string} encoding
+   * @param {Function} callback
+   */
+  _write(chunk, encoding, cb)
+  {
+    rebug('_write()',chunk);
+    if (this[_writable_closed]) { cb(new Error('Write after free.')); return; }
+
+    rebug('parent.write:',chunk,encoding,cb);
+    this[_parent].write(chunk,encoding,cb);
+  }
+
+  /**
+   * @private
+   * @param {Error} error
+   * @param {Function} callback
+   */
+  _destroy(error, callback)
+  {
+    rebug('_destroy()');
+
+    if (!this[_writable_closed]) {
+      rebug('-- writable.end()');
+      this.end();
+      this[_writable_closed] = true;
+    }
+
+    if (!this[_readable_closed]) {
+      rebug('-- readable.push(null)');
+      this.push(null);
+      this[_readable_closed] = true;
+    }
+
+    if (!this[_closed]) {
+      let peer = [this[_ra],this[_rp]].join(':');
+      rebug('-- disconnecting from event:',peer);
+      this[_parent].off(peer,this.process);
+      this[_parent] = undefined;
+      this[_closed] = true;
+    }
+
+    callback(error);
+  }
+
+  /**
+   * Handle incoming data from another source.
+   * @param {Buffer} data
+   * @returns {boolean}
+   */
+  process(data,rinfo)
+  {
+    rebug('process()');
+    if (data) rebug('-- data:',data);
+    if (rinfo) rebug('-- rinfo:',rinfo);
+    if (this[_readable_closed]) return false;
+    if (this[_objectmode] && !Packet.isPacket(data)) throw new TypeError('first parameter must be Packet object');
+    if (!this[_objectmode] && !Buffer.isBuffer(data)) throw new TypeError('first parameter must be buffer object');
+    //if (this[_listen] && !Util.isrinfo(rinfo)) throw new TypeError('second parameter must be rinfo object');
+    //if (data === null) throw new TypeError('data cannot be null');
+
+    rebug('-- push data');
+    this.push(data);
+    return true;
+  }
+
+  /**
+   * Close socket.
+   */
+  close()
+  {
+    rebug('close()');
+
+    if (!this[_closed] && this[pCloseTransport]) {
+      let peer = [this[_ra],this[_rp]].join(':');
+      rebug('-- disconnecting from event:',peer);
+      this[_parent].off(peer,this.process);
+      this[_parent] = undefined;
+      this[_closed] = true;
+    }
+
+    if (!this[_writable_closed]) {
+      rebug('-- writable.end()');
+      this.end();
+      this[_writable_closed] = true;
+    }
+
+    if (!this[_readable_closed]) {
+      rebug('-- readable.push(null)');
+      this.push(null);
+      this[_readable_closed] = true;
+    }
+  }
+
+  bind() { throw new Error('UdpStreamSlave cannot bind()') }
+  connect() { throw new Error('UdpStreamSlave cannot connect()') }
+  listen() { throw new Error('UdpStreamSlave cannot listen()') }
+  createConnection() { throw new Error('UdpStreamSlave cannot createConnection()') }
+  static create() { throw new Error('UdpStreamSlave cannot create()') }
+
+  [NodeUtil.inspect.custom](depth, options, inspect) {
+    return '['+this.constructor.name+']';
+  }
+}
 
 /**
  * Default filter for incoming messages.
@@ -563,8 +776,11 @@ function parseStaticConnectParameters(...arr)
   if (options.port) { port = options.port; delete options.port; }
   if (options.address) { address = options.address; delete options.address; }
   if (options.onConnect) { callback = options.onConnect; delete options.onConnect; }
-  debug({ port, address, callback, options });
+  rebug({ port, address, callback, options });
   return { port, address, callback, options };
 }
 
-module.exports = UdpStream;
+module.exports = {
+  UdpStream,
+  UdpStreamSlave,
+};

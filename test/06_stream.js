@@ -1,8 +1,8 @@
 const Assert = require('assert');
 const dgram = require('dgram');
 
-const UdpStream = require('../stream');
-const UdpStreamSub = require('../substream');
+const { UdpStream } = require('../stream');
+const Util = require('../util');
 
 describe('UdpStream', function()
 {
@@ -160,7 +160,8 @@ describe('UdpStream', function()
         {
           try {
             Assert.equal(filtered,true);
-            Assert(conn instanceof UdpStreamSub);
+            Assert.equal(Util.isObject(conn),true);
+            Assert.equal(conn.constructor.name,'UdpStreamSlave');
             success.connection = true; done();
           } catch(e) { done(e) }
           //finally { stream1.destroy() }

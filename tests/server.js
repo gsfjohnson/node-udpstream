@@ -1,6 +1,6 @@
 
 let xcount = 1;
-const UdpStream = require('../stream');
+const { UdpStream } = require('..');
 
 const server = UdpStream.create({ objectMode: true });
 //console.log('stream:',stream);
