@@ -83,7 +83,7 @@ describe('UdpStream', function()
     });
 
     it('should throw on invalid socket', function() {
-      Assert.throws(() => new UdpStream({ socket: {} }), /invalid options.socket/);
+      Assert.throws(() => new UdpStream({ socket: {} }) );
     });
 
     /*

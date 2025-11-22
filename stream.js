@@ -193,28 +193,44 @@ class UdpStream extends NodeStream.Duplex
   _write(chunk, encoding, cb)
   {
     debug('_write()',chunk);
-    if (this[_writable_closed]) { cb(new Error('Write after free.')); return; }
+
+    const err = function(e) { debug('error:',e.message); cb(e); }
+
+    if (this[_writable_closed]) { err(new Error('Write after free.')); return; }
 
     const connected = this[_connected];
-    let remotePort = this[_rp];
-    let remoteAddress = this[_ra];
-    let buffer = chunk;
+    let remotePort, remoteAddress, buffer;
 
     // de-encapsulate buffer out of Packet
     if (this[_objectmode]) {
-      if (!Packet.isPacket(chunk)) { cb(new Error('chunk is not Packet object')); return; }
+      if (!Packet.isPacket(chunk)) { err(new Error('chunk is not Packet object')); return; }
       buffer = chunk.buffer;
-      if (chunk.port) remotePort = chunk.port;
-      if (chunk.address) remoteAddress = chunk.address;
+      remotePort = chunk.port;
+      remoteAddress = chunk.address;
     }
     // allow Buffer objects to be overload with port/address properties
-    else if (this[_overloadBuffer] && Buffer.isBuffer(chunk)) {
-      if (chunk.port) remotePort = chunk.port;
-      if (chunk.address) remoteAddress = chunk.address;
+    else if (this[_overloadBuffer]) {
+      if (!Buffer.isBuffer(chunk)) { err(new Error('chunk is not Buffer object')); return; }
+      buffer = chunk;
+      remotePort = chunk.port;
+      remoteAddress = chunk.address;
     }
-    if (!Buffer.isBuffer(buffer)) { cb(new Error('chunk is not a Buffer object')); return; }
-    if (!Util.isPort(remotePort)) { cb(new Error('must provide remotePort: '+remotePort)); return; }
-    //if (!NodeNet.isIP(remoteAddress)) { cb(new Error('most provide remoteAddress')); return; }
+    else if (Buffer.isBuffer(chunk)) {
+      let { address, port } = chunk;
+      buffer = chunk;
+      if (port) remotePort = port;
+      if (address) remoteAddress = address;
+    }
+
+    if (this[_connected]) {
+      let [ address, port ] = this[_connected].split(':');
+      if (!remoteAddress) remoteAddress = address;
+      if (!remotePort) remotePort = parseInt(port);
+    }
+
+    if (!Buffer.isBuffer(buffer)) { err(new Error('data must be Buffer')); return; }
+    if (!Util.isPort(remotePort)) { err(new Error('must provide remotePort: '+remotePort)); return; }
+    if (!NodeNet.isIP(remoteAddress)) { err(new Error('most provide remoteAddress: '+remoteAddress)); return; }
 
     const params = [buffer];
     if (!connected && remotePort) params.push(remotePort);
@@ -376,7 +392,7 @@ class UdpStream extends NodeStream.Duplex
       udpsock.connect(...connectParams,(err) => {
         if (err) throw err;
         debug('-- socket connected',port,address);
-        this[_connected] = true;
+        this[_connected] = [address,port].join(':');
         debug('-- this[_connected] =',this[_connected]);
         if (callback) callback();
       });
@@ -614,6 +630,17 @@ class UdpStreamSlave extends UdpStream
   {
     rebug('_write()',chunk);
     if (this[_writable_closed]) { cb(new Error('Write after free.')); return; }
+
+    if (this[_objectmode]) {
+      if (!Packet.isPacket(data)) throw new TypeError('_write: only accepts Packet{} objects');
+    }
+    else if (this[_overloadBuffer]) {
+      if (!Buffer.isBuffer(chunk)) throw new TypeError('_write: only accepts Buffer objects');
+    }
+    else if (!Buffer.isBuffer(chunk)) throw new Error('_write: UdpStreamSlave requires buffer');
+
+    chunk.port = this[_rp];
+    chunk.address = this[_ra];
 
     rebug('parent.write:',chunk,encoding,cb);
     this[_parent].write(chunk,encoding,cb);
